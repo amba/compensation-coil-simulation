@@ -57,12 +57,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-f', '--force', action="store_true", help="overwrite existing files")
 parser.add_argument('-o', '--output', help="basename for output data files")
 parser.add_argument('--tilt_x', help="tilt (in degrees) around x axis", type=float, default=0)
+parser.add_argument('--shift_z', help="shift sample in z direction (m)", type=float, default=0) 
 
 
 args = parser.parse_args()
 
 if args.output:
     args.output += "_tilt_x=%.2g" % args.tilt_x
+    args.output += "_shift_z=%.2g" % args.shift_z
     
 w = 25e-3 + 2e-3
 coil_pos = np.array([0, 0, w])
@@ -97,6 +99,11 @@ rotation_matrix = r.as_dcm()
 
 tilted_positions = np.dot(sample_positions, rotation_matrix.T)
 
+# shift sample
+
+tilted_positions = tilted_positions - np.array([0, 0, args.shift_z])
+
+# calculate field
 
 sample_fields = field.evaluate(np.reshape(tilted_positions, (N * N, 3)))
 sample_fields = np.reshape(sample_fields, (N, N, 3))
