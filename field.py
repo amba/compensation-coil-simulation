@@ -25,7 +25,7 @@ import loopfield
 
 field = loopfield.Field()
 
-
+        
 def save_3d_file(output_file, data, header):
     fh = open(output_file, 'w')
     fh.write(header + "\n")
@@ -57,7 +57,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-f', '--force', action="store_true", help="overwrite existing files")
 parser.add_argument('-o', '--output', help="basename for output data files")
 parser.add_argument('--tilt_x', help="tilt (in degrees) around x axis", type=float, default=0)
-parser.add_argument('--shift_z', help="shift sample in z direction (m)", type=float, default=0) 
+parser.add_argument('--shift_z', help="shift sample in z direction (m)", type=float, default=0)
+parser.add_argument('--cmap', help='name of color map (default: seismic)', default='seismic')
 
 
 args = parser.parse_args()
@@ -65,7 +66,14 @@ args = parser.parse_args()
 if args.output:
     args.output += "_tilt_x=%.2g" % args.tilt_x
     args.output += "_shift_z=%.2g" % args.shift_z
-    
+
+
+
+def ensure_unique(file):
+    if not args.force and os.path.isfile(file):
+        sys.exit("file %s already exists. Use -f option to overwrite" % file)
+
+
 w = 25e-3 + 2e-3
 coil_pos = np.array([0, 0, w])
 add_coil(coil_pos, 9530)
@@ -74,16 +82,16 @@ add_coil(-coil_pos, 10623)
 # calculate field on axis
 N = 100
 pos_vals = np.zeros((N,3))
-z_vals = np.linspace(-2e-3, 2e-3, N)
+z_vals = np.linspace(-5e-3, 5e-3, N)
 pos_vals[:,2] = z_vals
-field_vals = field.evaluate(pos_vals)
-data_axis = np.stack((z_vals, field_vals[:,2]), axis=1)
-
+field_vals = field.evaluate(pos_vals)[:,2]
+data_axis = np.stack((z_vals, field_vals), axis=1)
+central_field = field_vals[int(N/2)]
 
 
 # calculate field on sample plain
 N = 50
-d_sample = 6e-3
+d_sample = 10e-3
 sample_normal = np.array([0,0,1])
 x_vals = np.linspace(-d_sample/2, d_sample/2, N)
 y_vals = np.linspace(-d_sample/2, d_sample/2, N)
@@ -95,7 +103,7 @@ sample_positions[...,1] = y_mesh
 # tilt sample
 
 r = Rotation.from_euler('x', args.tilt_x, degrees=True)
-rotation_matrix = r.as_dcm()
+rotation_matrix = r.as_matrix()
 
 tilted_positions = np.dot(sample_positions, rotation_matrix.T)
 
@@ -117,10 +125,9 @@ print(sample_normal_field.shape)
 
 sample_data = np.concatenate((sample_positions, tilted_positions, sample_fields, sample_normal_field), axis=2)
 
-def ensure_unique(file):
-    if not args.force and os.path.isfile(file):
-        sys.exit("file %s already exists. Use -f option to overwrite" % file)
-        
+
+
+
 if args.output:
     axis_output_file = args.output + "_axis.dat"
     ensure_unique(axis_output_file)
@@ -133,6 +140,35 @@ if args.output:
     header = "# x\ty\tz\tx_t\ty_t\tz_t\tB_x\tB_y\tB_z\tB_normal"
     save_3d_file(sample_output_file, sample_data, header)
 
+    # plot field deviation on z-axis
+ 
+    z_plot_file = args.output + "_axis_field.pdf"
+    ensure_unique(z_plot_file)
+    
+    field_vals = data_axis[:,1]
+    deviation_percent = 100 * (field_vals - central_field) / central_field
 
 
+    plt.title('deviation from central field (%)')
+    plt.xlabel('z (mm)')
+    plt.grid()
+    plt.ylabel('devation %')
+    plt.plot(1000 * z_vals, deviation_percent)
+    
+    plt.savefig(z_plot_file)
+    plt.close()
 
+    # plot z-field deviation in sample plain
+    plot_file = args.output + "_sample_plain_field.pdf"
+    ensure_unique(plot_file)
+    
+    # show outer axis left to right, inner axis bottom to top
+    sample_normal_field = np.flip(sample_normal_field, axis=1) # imshow plots the first axis top to bottom
+    sample_normal_field = np.swapaxes(sample_normal_field, 0, 1)
+    deviation_percent = 100 * (sample_normal_field - central_field) / central_field
+    plt.xlabel('x (mm)')
+    plt.ylabel('y (mm')
+    plt.imshow(deviation_percent, aspect='auto', interpolation='none', extent=[-d_sample/2, d_sample/2, -d_sample/2, d_sample/2], cmap=args.cmap)
+    plt.colorbar(format="%.0f", label='deviation (%)')
+    plt.savefig(plot_file)
+    plt.close()

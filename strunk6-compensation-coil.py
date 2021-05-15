@@ -95,7 +95,7 @@ sample_positions[...,1] = y_mesh
 # tilt sample
 
 r = Rotation.from_euler('x', args.tilt_x, degrees=True)
-rotation_matrix = r.as_dcm()
+rotation_matrix = r.as_matrix()
 
 tilted_positions = np.dot(sample_positions, rotation_matrix.T)
 
